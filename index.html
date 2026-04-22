@@ -340,6 +340,37 @@
 
     .error { color: #dc2626; font-size: .85rem; padding: 10px; background: #fee2e2; border-radius: 6px; margin-bottom: 10px; }
 
+    .detail-actions {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .btn-action {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: white;
+      color: var(--gray-600);
+      border: 1.5px solid var(--gray-200);
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-size: .85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .btn-action:hover {
+      border-color: var(--blue);
+      color: var(--blue);
+      background: var(--blue-light);
+    }
+    .btn-action.danger:hover {
+      border-color: #dc2626;
+      color: #dc2626;
+      background: #fee2e2;
+    }
+
   </style>
 </head>
 <body>
@@ -375,6 +406,16 @@
       </div>
       <span class="progress-label" id="detail-progress-label"></span>
     </div>
+  </div>
+  <div class="detail-actions">
+    <button class="btn-action" onclick="window.app.exportToExcel()">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 14h12V2H2v12zM5 5h2v4H5V5zm4 0h2v4H9V5z" fill="currentColor"/></svg>
+      Export Excel
+    </button>
+    <button class="btn-action danger" onclick="window.app.openDeleteModal()">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 4h10M6 2h4M5 5v7a1 1 0 001 1h4a1 1 0 001-1V5M7 7v5M9 7v5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Delete
+    </button>
   </div>
   <div class="task-list" id="task-list"></div>
 </div>
@@ -424,6 +465,18 @@
     <div class="modal-actions">
       <button class="btn-secondary" onclick="window.app.closeAssignModal()">Cancel</button>
       <button class="btn-primary" id="btn-submit-assign" onclick="window.app.submitAssign()">Assign Task</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="delete-modal">
+  <div class="modal">
+    <h2>Delete Property?</h2>
+    <p id="delete-warning" style="color: #dc2626; font-weight: 600;"></p>
+    <p>This action cannot be undone. All tasks for this property will be permanently deleted.</p>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="window.app.closeDeleteModal()">Cancel</button>
+      <button class="btn-primary" id="btn-submit-delete" style="background: #dc2626;" onclick="window.app.confirmDelete()">Delete Property</button>
     </div>
   </div>
 </div>
@@ -751,6 +804,89 @@
         alert('Failed to assign task: ' + err.message);
       } finally {
         btn.disabled = false;
+      }
+    },
+
+    // ── Export to Excel ────────────────────────────────
+
+    exportToExcel() {
+      const p = this.properties.find(prop => prop.id === this.currentPropertyId);
+      if (!p) return;
+
+      const tasks = p.tasks || [];
+
+      // Create CSV data
+      let csv = 'Property Address,Date Added\n';
+      csv += `"${p.address}","${this.fmtDate(p.created_at)}"\n\n`;
+      csv += 'Task #,Task Name,Status,Assigned To,Completed By,Completion Date\n';
+
+      tasks.forEach((t, i) => {
+        const status = t.completed_at ? 'Complete' : 'Pending';
+        const completedBy = t.completed_by || '';
+        const completionDate = t.completed_at ? this.fmtDate(t.completed_at) : '';
+        const assignedTo = t.assigned_to || '';
+        csv += `${i + 1},"${t.name}","${status}","${assignedTo}","${completedBy}","${completionDate}"\n`;
+      });
+
+      // Create blob and download
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `${p.address.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_tasks.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    },
+
+    // ── Delete Property ────────────────────────────────
+
+    openDeleteModal() {
+      const p = this.properties.find(prop => prop.id === this.currentPropertyId);
+      if (!p) return;
+      document.getElementById('delete-warning').textContent = `Delete "${p.address}"?`;
+      document.getElementById('delete-modal').classList.add('open');
+    },
+
+    closeDeleteModal() {
+      document.getElementById('delete-modal').classList.remove('open');
+    },
+
+    async confirmDelete() {
+      const p = this.properties.find(prop => prop.id === this.currentPropertyId);
+      if (!p) return;
+
+      const btn = document.getElementById('btn-submit-delete');
+      btn.disabled = true;
+      btn.textContent = 'Deleting...';
+
+      try {
+        // Delete all tasks first
+        const { error: tasksError } = await this.supabase
+          .from('tasks')
+          .delete()
+          .eq('property_id', p.id);
+
+        if (tasksError) throw tasksError;
+
+        // Delete property
+        const { error: propError } = await this.supabase
+          .from('properties')
+          .delete()
+          .eq('id', p.id);
+
+        if (propError) throw propError;
+
+        this.closeDeleteModal();
+        await this.loadProperties();
+        this.showDashboard();
+      } catch (err) {
+        console.error('Delete error:', err);
+        alert('Failed to delete property: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Delete Property';
       }
     }
   };
