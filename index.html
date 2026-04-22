@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Property Task Tracker</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy: #1a2b4a;
+      --blue: #2563eb;
+      --blue-light: #eff6ff;
+      --green: #16a34a;
+      --green-light: #f0fdf4;
+      --gray-50: #f9fafb;
+      --gray-100: #f3f4f6;
+      --gray-200: #e5e7eb;
+      --gray-400: #9ca3af;
+      --gray-600: #4b5563;
+      --gray-800: #1f2937;
+      --shadow: 0 1px 3px rgba(0,0,0,.1), 0 1px 2px rgba(0,0,0,.06);
+      --shadow-lg: 0 10px 25px rgba(0,0,0,.15);
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--gray-50);
+      color: var(--gray-800);
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--navy);
+      color: white;
+      padding: 0 24px;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      box-shadow: var(--shadow-lg);
+    }
+    header h1 {
+      font-size: 1.2rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    header span {
+      font-size: .75rem;
+      opacity: .6;
+      display: block;
+      font-weight: 400;
+      margin-top: 1px;
+    }
+
+    /* ── Screens ── */
+    .screen { display: none; padding: 24px; max-width: 720px; margin: 0 auto; }
+    .screen.active { display: block; }
+
+    /* ── Dashboard ── */
+    #btn-add {
+      background: var(--blue);
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: .9rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: background .15s;
+    }
+    #btn-add:hover { background: #1d4ed8; }
+    #btn-add:disabled { opacity: .5; cursor: not-allowed; }
+
+    .section-title {
+      font-size: .7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--gray-400);
+      margin: 28px 0 12px;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 24px;
+      color: var(--gray-400);
+    }
+    .empty-state .icon { font-size: 3rem; margin-bottom: 12px; }
+    .empty-state p { font-size: .95rem; }
+
+    /* Property cards */
+    .property-card {
+      background: white;
+      border-radius: 12px;
+      padding: 18px 20px;
+      margin-bottom: 12px;
+      box-shadow: var(--shadow);
+      cursor: pointer;
+      border: 1.5px solid transparent;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .property-card:hover {
+      border-color: var(--blue);
+      box-shadow: 0 4px 12px rgba(37,99,235,.12);
+    }
+    .property-card .address {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+    .property-card .meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .progress-bar-wrap {
+      flex: 1;
+      height: 6px;
+      background: var(--gray-200);
+      border-radius: 99px;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: var(--blue);
+      border-radius: 99px;
+      transition: width .4s ease;
+    }
+    .progress-bar-fill.done { background: var(--green); }
+    .progress-label {
+      font-size: .78rem;
+      color: var(--gray-600);
+      white-space: nowrap;
+    }
+    .badge-done {
+      font-size: .7rem;
+      font-weight: 700;
+      background: var(--green-light);
+      color: var(--green);
+      padding: 3px 8px;
+      border-radius: 99px;
+    }
+
+    /* ── Modal ── */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.45);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      background: white;
+      border-radius: 16px;
+      padding: 32px 28px;
+      width: 100%;
+      max-width: 480px;
+      box-shadow: var(--shadow-lg);
+      animation: slideUp .2s ease;
+    }
+    @keyframes slideUp {
+      from { transform: translateY(20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    .modal h2 { font-size: 1.2rem; font-weight: 700; margin-bottom: 6px; }
+    .modal p { font-size: .88rem; color: var(--gray-600); margin-bottom: 24px; }
+
+    .input-wrap label {
+      display: block;
+      font-size: .8rem;
+      font-weight: 600;
+      color: var(--gray-600);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+    .input-wrap input {
+      width: 100%;
+      padding: 13px 16px;
+      border: 1.5px solid var(--gray-200);
+      border-radius: 8px;
+      font-size: 1rem;
+      outline: none;
+      transition: border-color .15s;
+    }
+    .input-wrap input:focus { border-color: var(--blue); }
+
+    .modal-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 24px;
+    }
+    .btn-primary {
+      flex: 1;
+      background: var(--blue);
+      color: white;
+      border: none;
+      padding: 13px;
+      border-radius: 8px;
+      font-size: .95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-secondary {
+      background: var(--gray-100);
+      color: var(--gray-800);
+      border: none;
+      padding: 13px 20px;
+      border-radius: 8px;
+      font-size: .95rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-secondary:hover { background: var(--gray-200); }
+
+    /* ── Property detail ── */
+    .back-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--blue);
+      font-size: .9rem;
+      font-weight: 600;
+      cursor: pointer;
+      background: none;
+      border: none;
+      padding: 0;
+      margin-bottom: 20px;
+    }
+    .back-btn:hover { opacity: .75; }
+
+    .detail-header {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: var(--shadow);
+    }
+    .detail-header h2 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .detail-header .sub {
+      font-size: .82rem;
+      color: var(--gray-400);
+    }
+    .detail-progress {
+      margin-top: 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    /* Task list */
+    .task-list { display: flex; flex-direction: column; gap: 8px; }
+
+    .task-row {
+      background: white;
+      border-radius: 12px;
+      padding: 16px 18px;
+      box-shadow: var(--shadow);
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      transition: opacity .2s;
+    }
+    .task-row.completed { background: var(--green-light); }
+
+    .task-check {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      border: 2px solid var(--gray-200);
+      background: white;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: all .15s;
+    }
+    .task-check:hover { border-color: var(--blue); background: var(--blue-light); }
+    .task-row.completed .task-check {
+      background: var(--green);
+      border-color: var(--green);
+    }
+    .task-check svg { display: none; }
+    .task-row.completed .task-check svg { display: block; }
+
+    .task-info { flex: 1; min-width: 0; }
+    .task-name {
+      font-size: .95rem;
+      font-weight: 600;
+      color: var(--gray-800);
+    }
+    .task-row.completed .task-name {
+      color: var(--gray-600);
+      text-decoration: line-through;
+      text-decoration-color: var(--gray-400);
+    }
+    .task-meta {
+      font-size: .78rem;
+      color: var(--gray-400);
+      margin-top: 3px;
+    }
+    .task-row.completed .task-meta { color: var(--green); }
+
+    .task-assigned {
+      font-size: .78rem;
+      color: var(--blue);
+      font-weight: 600;
+      padding: 4px 10px;
+      background: var(--blue-light);
+      border-radius: 6px;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+    .task-assigned.empty { color: var(--gray-400); background: var(--gray-100); font-weight: 400; }
+
+    .task-number {
+      font-size: .75rem;
+      font-weight: 700;
+      color: var(--gray-400);
+      width: 20px;
+      text-align: right;
+      flex-shrink: 0;
+    }
+    .task-row.completed .task-number { color: var(--green); }
+
+    .loading { opacity: 0.6; pointer-events: none; }
+    .error { color: #dc2626; font-size: .85rem; padding: 10px; background: #fee2e2; border-radius: 6px; margin-bottom: 10px; }
+
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Property Task Tracker</h1>
+    <span id="header-sub">Dashboard</span>
+  </div>
+  <button id="btn-add" onclick="openAddModal()">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="white" stroke-width="2.2" stroke-linecap="round"/></svg>
+    Add Property
+  </button>
+</header>
+
+<!-- Dashboard -->
+<div id="screen-dashboard" class="screen active">
+  <div class="section-title">Active Properties</div>
+  <div id="error-message"></div>
+  <div id="property-list"></div>
+</div>
+
+<!-- Property Detail -->
+<div id="screen-detail" class="screen">
+  <button class="back-btn" onclick="showDashboard()">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 3L5 8l5 5" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    All Properties
+  </button>
+  <div class="detail-header">
+    <h2 id="detail-address"></h2>
+    <div class="sub" id="detail-date"></div>
+    <div class="detail-progress">
+      <div class="progress-bar-wrap" style="height:8px">
+        <div class="progress-bar-fill" id="detail-bar" style="width:0%"></div>
+      </div>
+      <span class="progress-label" id="detail-progress-label"></span>
+    </div>
+  </div>
+  <div class="task-list" id="task-list"></div>
+</div>
+
+<!-- Add Property Modal -->
+<div class="modal-backdrop" id="add-modal">
+  <div class="modal">
+    <h2>Add New Property</h2>
+    <p>Enter the property address to create its task list.</p>
+    <div id="add-error" class="error" style="display:none;"></div>
+    <div class="input-wrap">
+      <label>Property Address</label>
+      <input type="text" id="address-input" placeholder="e.g. 42 Harbour Street, Sydney NSW 2000"
+        onkeydown="if(event.key==='Enter') submitNewProperty()">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeAddModal()">Cancel</button>
+      <button class="btn-primary" id="btn-submit-property" onclick="submitNewProperty()">Create Task List</button>
+    </div>
+  </div>
+</div>
+
+<!-- Complete Task Modal -->
+<div class="modal-backdrop" id="name-modal">
+  <div class="modal">
+    <h2 id="name-modal-task"></h2>
+    <p>Enter your name to mark this task as complete.</p>
+    <div class="input-wrap">
+      <label>Your Name</label>
+      <input type="text" id="name-input" placeholder="e.g. Sarah Johnson"
+        onkeydown="if(event.key==='Enter') submitComplete()">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeNameModal()">Cancel</button>
+      <button class="btn-primary" id="btn-submit-complete" onclick="submitComplete()">Mark Complete</button>
+    </div>
+  </div>
+</div>
+
+<!-- Assign Task Modal -->
+<div class="modal-backdrop" id="assign-modal">
+  <div class="modal">
+    <h2 id="assign-modal-task"></h2>
+    <p>Who is responsible for this task?</p>
+    <div class="input-wrap">
+      <label>Assigned To</label>
+      <input type="text" id="assign-input" placeholder="e.g. Sarah Johnson"
+        onkeydown="if(event.key==='Enter') submitAssign()">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeAssignModal()">Cancel</button>
+      <button class="btn-primary" id="btn-submit-assign" onclick="submitAssign()">Assign Task</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Supabase config
+  const SUPABASE_URL = 'https://aybarucuurzmnnpdcscw.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_51b-03t_vZpEeWXkLw3mFg_fwakQert';
+  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  const TASKS = [
+    "Property loaded in Vault",
+    "System changed to listing",
+    "Authority uploaded",
+    "Marketing received",
+    "SOI uploaded",
+    "Photos booked",
+    "Photos uploaded",
+    "Copywrite done"
+  ];
+
+  let properties = [];
+  let currentPropertyId = null;
+  let pendingTaskIndex = null;
+  let pendingAssignIndex = null;
+
+  function fmtDate(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  function today() {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  function showError(msg) {
+    const el = document.getElementById('error-message');
+    el.innerHTML = `<div class="error">${msg}</div>`;
+    setTimeout(() => el.innerHTML = '', 5000);
+  }
+
+  // ── Dashboard ─────────────────────────────────────────
+
+  async function loadProperties() {
+    try {
+      const { data, error } = await supabase
+        .from('properties')
+        .select('*, tasks(*)')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      properties = data || [];
+      renderDashboard();
+    } catch (err) {
+      console.error('Load error:', err);
+      showError('Failed to load properties: ' + err.message);
+    }
+  }
+
+  function renderDashboard() {
+    const list = document.getElementById('property-list');
+
+    if (properties.length === 0) {
+      list.innerHTML = `
+        <div class="empty-state">
+          <div class="icon">🏡</div>
+          <p>No properties yet.<br>Tap <strong>Add Property</strong> to get started.</p>
+        </div>`;
+      return;
+    }
+
+    list.innerHTML = properties.map(p => {
+      const tasks = p.tasks || [];
+      const done = tasks.filter(t => t.completed_at).length;
+      const total = tasks.length || 1;
+      const pct = Math.round((done / total) * 100);
+      const allDone = done === total && total > 0;
+      return `
+        <div class="property-card" onclick="showDetail('${p.id}')">
+          <div class="address">${p.address}</div>
+          <div class="meta">
+            <div class="progress-bar-wrap">
+              <div class="progress-bar-fill ${allDone ? 'done' : ''}" style="width:${pct}%"></div>
+            </div>
+            ${allDone
+              ? `<span class="badge-done">✓ Complete</span>`
+              : `<span class="progress-label">${done} of ${total} done</span>`}
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  // ── Add Property ──────────────────────────────────────
+
+  function openAddModal() {
+    document.getElementById('add-modal').classList.add('open');
+    setTimeout(() => document.getElementById('address-input').focus(), 100);
+  }
+
+  function closeAddModal() {
+    document.getElementById('add-modal').classList.remove('open');
+    document.getElementById('address-input').value = '';
+    document.getElementById('add-error').style.display = 'none';
+  }
+
+  async function submitNewProperty() {
+    const address = document.getElementById('address-input').value.trim();
+    if (!address) {
+      document.getElementById('address-input').focus();
+      return;
+    }
+
+    const btn = document.getElementById('btn-submit-property');
+    btn.disabled = true;
+    btn.textContent = 'Creating...';
+
+    try {
+      // Create property
+      const { data: propData, error: propError } = await supabase
+        .from('properties')
+        .insert([{ address, created_at: today() }])
+        .select()
+        .single();
+
+      if (propError) throw propError;
+
+      // Create tasks
+      const tasksToInsert = TASKS.map(name => ({
+        property_id: propData.id,
+        name,
+        completed_at: null,
+        completed_by: null,
+        assigned_to: null
+      }));
+
+      const { error: tasksError } = await supabase
+        .from('tasks')
+        .insert(tasksToInsert);
+
+      if (tasksError) throw tasksError;
+
+      closeAddModal();
+      await loadProperties();
+      showDetail(propData.id);
+    } catch (err) {
+      console.error('Add error:', err);
+      document.getElementById('add-error').textContent = err.message;
+      document.getElementById('add-error').style.display = 'block';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Create Task List';
+    }
+  }
+
+  // ── Detail View ───────────────────────────────────────
+
+  function showDetail(id) {
+    currentPropertyId = id;
+    const p = properties.find(prop => prop.id === id);
+    if (!p) return;
+
+    document.getElementById('detail-address').textContent = p.address;
+    document.getElementById('detail-date').textContent = `Added ${fmtDate(p.created_at)}`;
+    document.getElementById('header-sub').textContent = p.address;
+    document.getElementById('btn-add').style.display = 'none';
+    setScreen('detail');
+    renderTasks();
+  }
+
+  function showDashboard() {
+    currentPropertyId = null;
+    document.getElementById('header-sub').textContent = 'Dashboard';
+    document.getElementById('btn-add').style.display = 'flex';
+    setScreen('dashboard');
+  }
+
+  function setScreen(name) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById('screen-' + name).classList.add('active');
+  }
+
+  function renderTasks() {
+    const p = properties.find(prop => prop.id === currentPropertyId);
+    if (!p) return;
+
+    const tasks = p.tasks || [];
+    const done = tasks.filter(t => t.completed_at).length;
+    const total = tasks.length;
+    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+
+    document.getElementById('detail-bar').style.width = pct + '%';
+    document.getElementById('detail-bar').className = 'progress-bar-fill' + (done === total && total > 0 ? ' done' : '');
+    document.getElementById('detail-progress-label').textContent = `${done} of ${total} tasks complete`;
+
+    document.getElementById('task-list').innerHTML = tasks.map((t, i) => `
+      <div class="task-row ${t.completed_at ? 'completed' : ''}" id="task-row-${i}">
+        <span class="task-number">${i + 1}</span>
+        <div class="task-check" onclick="handleTaskClick(${i})">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M2 7l4 4 6-6" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="task-info">
+          <div class="task-name">${t.name}</div>
+          <div style="display:flex; gap:10px; margin-top:6px; align-items:center;">
+            <div class="task-meta" style="margin:0;">
+              ${t.completed_at
+                ? `Completed by ${t.completed_by} · ${fmtDate(t.completed_at)}`
+                : `Pending`}
+            </div>
+            <span class="task-assigned ${t.assigned_to ? '' : 'empty'}" onclick="openAssignModal(${i})">
+              ${t.assigned_to ? t.assigned_to : '+ Assign'}
+            </span>
+          </div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // ── Task Completion ───────────────────────────────────
+
+  function handleTaskClick(taskIndex) {
+    const p = properties.find(prop => prop.id === currentPropertyId);
+    const task = p.tasks[taskIndex];
+
+    if (task.completed_at) {
+      // Undo completion
+      undoTask(task.id);
+      return;
+    }
+
+    pendingTaskIndex = taskIndex;
+    document.getElementById('name-modal-task').textContent = task.name;
+    document.getElementById('name-modal').classList.add('open');
+    setTimeout(() => document.getElementById('name-input').focus(), 100);
+  }
+
+  function closeNameModal() {
+    document.getElementById('name-modal').classList.remove('open');
+    document.getElementById('name-input').value = '';
+    pendingTaskIndex = null;
+  }
+
+  async function submitComplete() {
+    const name = document.getElementById('name-input').value.trim();
+    if (!name) {
+      document.getElementById('name-input').focus();
+      return;
+    }
+
+    const p = properties.find(prop => prop.id === currentPropertyId);
+    const task = p.tasks[pendingTaskIndex];
+
+    const btn = document.getElementById('btn-submit-complete');
+    btn.disabled = true;
+
+    try {
+      const { error } = await supabase
+        .from('tasks')
+        .update({ completed_at: today(), completed_by: name })
+        .eq('id', task.id);
+
+      if (error) throw error;
+
+      closeNameModal();
+      await loadProperties();
+      showDetail(currentPropertyId);
+    } catch (err) {
+      console.error('Complete error:', err);
+      alert('Failed to mark task complete: ' + err.message);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function undoTask(taskId) {
+    try {
+      const { error } = await supabase
+        .from('tasks')
+        .update({ completed_at: null, completed_by: null })
+        .eq('id', taskId);
+
+      if (error) throw error;
+
+      await loadProperties();
+      showDetail(currentPropertyId);
+    } catch (err) {
+      console.error('Undo error:', err);
+      alert('Failed to undo task: ' + err.message);
+    }
+  }
+
+  // ── Task Assignment ────────────────────────────────────
+
+  function openAssignModal(taskIndex) {
+    pendingAssignIndex = taskIndex;
+    const p = properties.find(prop => prop.id === currentPropertyId);
+    const task = p.tasks[taskIndex];
+    document.getElementById('assign-modal-task').textContent = task.name;
+    document.getElementById('assign-input').value = task.assigned_to || '';
+    document.getElementById('assign-modal').classList.add('open');
+    setTimeout(() => document.getElementById('assign-input').focus(), 100);
+  }
+
+  function closeAssignModal() {
+    document.getElementById('assign-modal').classList.remove('open');
+    document.getElementById('assign-input').value = '';
+    pendingAssignIndex = null;
+  }
+
+  async function submitAssign() {
+    const name = document.getElementById('assign-input').value.trim();
+    const p = properties.find(prop => prop.id === currentPropertyId);
+    const task = p.tasks[pendingAssignIndex];
+
+    const btn = document.getElementById('btn-submit-assign');
+    btn.disabled = true;
+
+    try {
+      const { error } = await supabase
+        .from('tasks')
+        .update({ assigned_to: name || null })
+        .eq('id', task.id);
+
+      if (error) throw error;
+
+      closeAssignModal();
+      await loadProperties();
+      showDetail(currentPropertyId);
+    } catch (err) {
+      console.error('Assign error:', err);
+      alert('Failed to assign task: ' + err.message);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  // ── Init ─────────────────────────────────────────────
+  loadProperties();
+</script>
+</body>
+</html>
